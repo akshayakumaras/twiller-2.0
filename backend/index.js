@@ -22,15 +22,19 @@ import crypto from "crypto";
 // FIREBASE
 // ==========================================
 
+
 const require = createRequire(import.meta.url);
 
-const serviceAccount = require(
-  "./firebase-service-account.json"
-);
+const serviceAccountPath =
+  process.env.FIREBASE_SERVICE_ACCOUNT_PATH ||
+  "./firebase-service-account.json";
+
+const serviceAccount = require(serviceAccountPath);
 
 initializeApp({
   credential: cert(serviceAccount),
 });
+
 
 
 // ==========================================
