@@ -6,6 +6,7 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
 } from "firebase/auth";
 import React, { createContext, useContext, useState, useEffect } from "react";
@@ -256,7 +257,7 @@ localStorage.setItem("otp-password", password);
 
     try {
       const googleauthprovider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, googleauthprovider);
+      const result = await signInWithRedirect(auth, googleauthprovider);
       const firebaseuser = result.user;
 
       if (!firebaseuser?.email) {
