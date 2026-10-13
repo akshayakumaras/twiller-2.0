@@ -1,6 +1,7 @@
 "use client";
 
 import React from 'react';
+import { useLanguage } from "@/context/LanguageContext";
 
 import {
   Home,
@@ -33,15 +34,52 @@ interface SidebarProps {
 
 export default function Sidebar({ currentPage = 'home', onNavigate }: SidebarProps) {
   const { user, logout } = useAuth();
+  const { t } = useLanguage();
 
   const navigation = [
-    { name: 'Home', icon: Home, current: currentPage === 'home', page: 'home' },
-    { name: 'Explore', icon: Search, current: currentPage === 'explore', page: 'explore' },
-    { name: 'Notifications', icon: Bell, current: currentPage === 'notifications', page: 'notifications', badge: true },
-    { name: 'Messages', icon: Mail, current: currentPage === 'messages', page: 'messages' },
-    { name: 'Bookmarks', icon: Bookmark, current: currentPage === 'bookmarks', page: 'bookmarks' },
-    { name: 'Profile', icon: User, current: currentPage === 'profile', page: 'profile' },
-    { name: 'More', icon: MoreHorizontal, current: currentPage === 'more', page: 'more' },
+    {
+      name: t("home"),
+      icon: Home,
+      current: currentPage === "home",
+      page: "home",
+    },
+    {
+      name: t("explore"),
+      icon: Search,
+      current: currentPage === "explore",
+      page: "explore",
+    },
+    {
+      name: t("notifications"),
+      icon: Bell,
+      current: currentPage === "notifications",
+      page: "notifications",
+      badge: true,
+    },
+    {
+      name: t("messages"),
+      icon: Mail,
+      current: currentPage === "messages",
+      page: "messages",
+    },
+    {
+      name: t("bookmarks"),
+      icon: Bookmark,
+      current: currentPage === "bookmarks",
+      page: "bookmarks",
+    },
+    {
+      name: t("profile"),
+      icon: User,
+      current: currentPage === "profile",
+      page: "profile",
+    },
+    {
+      name: t("more"),
+      icon: MoreHorizontal,
+      current: currentPage === "more",
+      page: "more",
+    },
   ];
 
   return (
@@ -49,16 +87,15 @@ export default function Sidebar({ currentPage = 'home', onNavigate }: SidebarPro
       <div className="p-4">
         <TwitterLogo size="lg" className="text-white" />
       </div>
-      
+
       <nav className="flex-1 px-2">
         <ul className="space-y-2">
           {navigation.map((item) => (
             <li key={item.name}>
               <Button
                 variant="ghost"
-                className={`w-full justify-start text-xl py-6 px-4 rounded-full hover:bg-gray-900 ${
-                  item.current ? 'font-bold' : 'font-normal'
-                } text-white hover:text-white`}
+                className={`w-full justify-start text-xl py-6 px-4 rounded-full hover:bg-gray-900 ${item.current ? 'font-bold' : 'font-normal'
+                  } text-white hover:text-white`}
                 onClick={() => onNavigate?.(item.page)}
               >
                 <item.icon className="mr-4 h-7 w-7" />
@@ -72,14 +109,14 @@ export default function Sidebar({ currentPage = 'home', onNavigate }: SidebarPro
             </li>
           ))}
         </ul>
-        
+
         <div className="mt-8 px-2">
           <Button className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-full text-lg">
-            Post
+            {t("post")}
           </Button>
         </div>
       </nav>
-      
+
       {user && (
         <div className="p-4 border-t border-gray-800">
           <DropdownMenu>
@@ -102,15 +139,15 @@ export default function Sidebar({ currentPage = 'home', onNavigate }: SidebarPro
             <DropdownMenuContent className="w-56 bg-black border-gray-800">
               <DropdownMenuItem className="text-white hover:bg-gray-900">
                 <Settings className="mr-2 h-4 w-4" />
-                Settings
+                {t("settings")}
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-gray-800" />
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 className="text-white hover:bg-gray-900"
                 onClick={logout}
               >
                 <LogOut className="mr-2 h-4 w-4" />
-                Log out @{user.username}
+                {t("logout")} @{user.username}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

@@ -5,11 +5,12 @@ import LoadingSpinner from "../loading-spinner";
 import Sidebar from "./Sidebar";
 import RightSidebar from "./Rightsidebar";
 import ProfilePage from "../ProfilePage";
+import { useLanguage } from "@/context/LanguageContext";
 
 const Mainlayout = ({ children }: { children: React.ReactNode }) => {
   const { user, isLoading } = useAuth();
   const [currentPage, setCurrentPage] = useState("home");
-
+  const { t } = useLanguage();
   if (isLoading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">

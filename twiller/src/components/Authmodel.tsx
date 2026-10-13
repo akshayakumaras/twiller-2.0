@@ -74,7 +74,11 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login' }: Au
 
     try {
       if (mode === 'login') {
-        await login(formData.email, formData.password);
+        const result = await login(formData.email, formData.password);
+
+if (result === "otp") {
+  return "otp";
+}
       } else {
         await signup(formData.email, formData.password, formData.username, formData.displayName);
       }
@@ -85,6 +89,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login' }: Au
       setErrors({ general: 'Authentication failed. Please try again.' });
     }
   };
+
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -217,6 +222,21 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login' }: Au
                 <p className="text-red-400 text-sm">{errors.password}</p>
               )}
             </div>
+
+            {mode === "login" && (
+              <div className="text-right">
+                <Button
+                  type="button"
+                  variant="link"
+                  className="text-blue-400 hover:text-blue-300 p-0 h-auto"
+                  onClick={() => {
+                    window.location.href = "/forgot-password";
+                  }}
+                >
+                  Forgot Password?
+                </Button>
+              </div>
+            )}
 
             <Button
               type="submit"

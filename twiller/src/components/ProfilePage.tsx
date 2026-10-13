@@ -18,90 +18,18 @@ import TweetCard from "./TweetCard";
 import { Card, CardContent } from "./ui/card";
 import Editprofile from "./Editprofile";
 import axiosInstance from "@/lib/axiosInstance";
+import LanguageSelector from "./LanguageSelector";
+import { useLanguage } from "@/context/LanguageContext";
 
-interface Tweet {
-  id: string;
-  author: {
-    id: string;
-    username: string;
-    displayName: string;
-    avatar: string;
-    verified?: boolean;
-  };
-  content: string;
-  timestamp: string;
-  likes: number;
-  retweets: number;
-  comments: number;
-  liked?: boolean;
-  retweeted?: boolean;
-  image?: string;
-}
-const tweets: Tweet[] = [
-  {
-    id: "1",
-    author: {
-      id: "1",
-      username: "elonmusk",
-      displayName: "Elon Musk",
-      avatar:
-        "https://images.pexels.com/photos/2379005/pexels-photo-2379005.jpeg?auto=compress&cs=tinysrgb&w=400",
-      verified: true,
-    },
-    content:
-      "Just had an amazing conversation about the future of AI. The possibilities are endless!",
-    timestamp: "2h",
-    likes: 1247,
-    retweets: 324,
-    comments: 89,
-    liked: false,
-    retweeted: false,
-  },
-  {
-    id: "2",
-    author: {
-      id: "1",
-      username: "sarahtech",
-      displayName: "Sarah Johnson",
-      avatar:
-        "https://images.pexels.com/photos/415829/pexels-photo-415829.jpeg?auto=compress&cs=tinysrgb&w=400",
-      verified: false,
-    },
-    content:
-      "Working on some exciting new features for our app. Can't wait to share what we've been building! 🚀",
-    timestamp: "4h",
-    likes: 89,
-    retweets: 23,
-    comments: 12,
-    liked: true,
-    retweeted: false,
-  },
-  {
-    id: "3",
-    author: {
-      id: "4",
-      username: "designguru",
-      displayName: "Alex Chen",
-      avatar:
-        "https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg?auto=compress&cs=tinysrgb&w=400",
-      verified: true,
-    },
-    content:
-      "The new design system is finally complete! It took 6 months but the results are incredible. Clean, consistent, and accessible.",
-    timestamp: "6h",
-    likes: 456,
-    retweets: 78,
-    comments: 34,
-    liked: false,
-    retweeted: true,
-    image:
-      "https://images.pexels.com/photos/196645/pexels-photo-196645.jpeg?auto=compress&cs=tinysrgb&w=800",
-  },
-];
 export default function ProfilePage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("posts");
   const [showEditModal, setShowEditModal] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+const [preferenceLoaded, setPreferenceLoaded] = useState(false);
+    const { t } = useLanguage();
+
+  const [loginHistory, setLoginHistory] = useState<any[]>([]);
 
   if (!user) return null;
   const [tweets, setTweets] = useState<any>([]);
@@ -117,9 +45,52 @@ export default function ProfilePage() {
       setloading(false);
     }
   };
-  useEffect(() => {
-    fetchTweets();
-  }, []);
+  const toggleNotifications = async () => {
+  const newValue = !notificationsEnabled;
+
+  // Update the UI and save the preference
+  setNotificationsEnabled(newValue);
+  localStorage.setItem("notificationsEnabled", String(newValue));
+
+  // Ask permission only when the user turns notifications ON
+  if (
+    newValue &&
+    "Notification" in window &&
+    Notification.permission === "default"
+  ) {
+    const permission = await Notification.requestPermission();
+
+    if (permission !== "granted") {
+      console.log("Browser notification permission was not granted.");
+    }
+  }
+};
+ // Load the saved notification preference once
+useEffect(() => {
+  const savedPreference =
+    localStorage.getItem("notificationsEnabled") === "true";
+
+  setNotificationsEnabled(savedPreference);
+  setPreferenceLoaded(true);
+}, []);
+
+// Fetch tweets and login history when the user changes
+useEffect(() => {
+  if (!user) return;
+
+  fetchTweets();
+
+  if (user._id) {
+    axiosInstance
+      .get(`/login-history/${user._id}`)
+      .then((res) => {
+        setLoginHistory(res.data);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch login history:", err);
+      });
+  }
+}, [user]);
   // Filter tweets by current user
   const userTweets = tweets.filter((tweet: any) => tweet.author._id === user._id);
 
@@ -230,7 +201,45 @@ export default function ProfilePage() {
             </span>
           </div>
         </div>
+        <div className="mt-4 flex items-center justify-between border border-gray-700 rounded-lg p-4">
+  <div>
+    <h3 className="text-white font-semibold">
+  {t("browserNotifications")}
+</h3>
+
+<p className="text-sm text-gray-400">
+  {t("notificationDescription")}
+</p>
+  </div>
+
+  <Button
+    onClick={toggleNotifications}
+    disabled={!preferenceLoaded}
+    className={
+      notificationsEnabled
+        ? "bg-green-600 hover:bg-green-700"
+        : "bg-gray-600 hover:bg-gray-700"
+    }
+  >
+    {notificationsEnabled ? t("on") : t("off")}
+
+  </Button>
+</div>
       </div>
+
+      <div className="mt-4 flex items-center justify-between border border-gray-700 rounded-lg p-4">
+  <div>
+    <h3 className="text-white font-semibold">
+  {t("language")}
+</h3>
+
+<p className="text-sm text-gray-400">
+  {t("selectLanguage")}
+</p>
+  </div>
+
+  <LanguageSelector />
+</div>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -239,31 +248,31 @@ export default function ProfilePage() {
             value="posts"
             className="data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:border-b-2 data-[state=active]:border-blue-500 data-[state=active]:rounded-none text-gray-400 hover:bg-gray-900/50 py-4 font-semibold"
           >
-            Posts
+            {t("posts")}
           </TabsTrigger>
           <TabsTrigger
             value="replies"
             className="data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:border-b-2 data-[state=active]:border-blue-500 data-[state=active]:rounded-none text-gray-400 hover:bg-gray-900/50 py-4 font-semibold"
           >
-            Replies
+            {t("replies")}
           </TabsTrigger>
           <TabsTrigger
             value="highlights"
             className="data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:border-b-2 data-[state=active]:border-blue-500 data-[state=active]:rounded-none text-gray-400 hover:bg-gray-900/50 py-4 font-semibold"
           >
-            Highlights
+            {t("highlights")}
           </TabsTrigger>
           <TabsTrigger
             value="articles"
             className="data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:border-b-2 data-[state=active]:border-blue-500 data-[state=active]:rounded-none text-gray-400 hover:bg-gray-900/50 py-4 font-semibold"
           >
-            Articles
+            {t("articles")}
           </TabsTrigger>
           <TabsTrigger
             value="media"
             className="data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:border-b-2 data-[state=active]:border-blue-500 data-[state=active]:rounded-none text-gray-400 hover:bg-gray-900/50 py-4 font-semibold"
           >
-            Media
+            {t("media")}
           </TabsTrigger>
         </TabsList>
 
@@ -274,7 +283,7 @@ export default function ProfilePage() {
                 <CardContent className="py-12 text-center">
                   <div className="text-gray-400">
                     <h3 className="text-2xl font-bold mb-2">
-                      You haven't posted yet
+                      {t("youHaventPostedYet")}
                     </h3>
                     <p>When you post, it will show up here.</p>
                   </div>
@@ -340,6 +349,41 @@ export default function ProfilePage() {
           </Card>
         </TabsContent>
       </Tabs>
+      <div className="mt-8 px-4">
+  <h2 className="text-xl font-bold text-white mb-4">
+    Login History
+  </h2>
+
+  {loginHistory.length === 0 ? (
+    <p className="text-gray-400">
+      No login history available.
+    </p>
+  ) : (
+    <div className="space-y-3">
+      {loginHistory.map((item: any) => (
+        <Card
+          key={item._id}
+          className="bg-black border-gray-700"
+        >
+          <CardContent className="p-4 text-white">
+            <p><strong>Browser:</strong> {item.browser}</p>
+
+            <p><strong>Operating System:</strong> {item.operatingSystem}</p>
+
+            <p><strong>Device:</strong> {item.deviceType}</p>
+
+            <p><strong>IP Address:</strong> {item.ipAddress}</p>
+
+            <p>
+              <strong>Login Time:</strong>{" "}
+              {new Date(item.loginTime).toLocaleString()}
+            </p>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )}
+</div>
       <Editprofile
         isopen={showEditModal}
         onclose={() => setShowEditModal(false)}

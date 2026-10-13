@@ -1,0 +1,44 @@
+
+# Private Firebase credentials
+backend/firebase-service-account.json
+
+# Private Firebase credentials
+backend/firebase-service-account.json
+push-error.txt
+
+# Environment files
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Firebase credentials
+backend/firebase-service-account.json
+
+# Local files
+push-error.txt
+.DS_Store
+**/.DS_Store
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+
+# Firebase credentials
+backend/firebase-service-account.json
+
+# Environment files
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Dependencies and build files
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+.DS_Store
+push-error.txt

@@ -1,5 +1,5 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
+**/node_modules/**
 # dependencies
 /node_modules
 /.pnp
@@ -39,3 +39,49 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Firebase Admin credentials
+backend/firebase-service-account.json
+
+# Dependencies and build output
+node_modules/
+.next/
+
+# Secrets
+backend/.env
+twiller/.env.local
+backend/firebase-service-account.json
+
+# Local uploads
+backend/uploads/
+
+# Secrets
+backend/.env
+twiller/.env.local
+backend/firebase-service-account.json
+
+# Dependencies
+**/node_modules/
+
+# Local uploads
+backend/uploads/
+
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+dist/
+coverage/
+.DS_Store

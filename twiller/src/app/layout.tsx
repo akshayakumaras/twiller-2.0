@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { LanguageProvider } from "@/context/LanguageContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,10 +14,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'X Clone - Social Media Platform',
-  description: 'A modern Twitter clone built with Next.js ',
-   icons: {
-    icon:"/favicon.ico",
+  title: "X Clone - Social Media Platform",
+  description: "A modern Twitter clone built with Next.js",
+  icons: {
+    icon: "/favicon.ico",
   },
 };
 
@@ -30,7 +31,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <LanguageProvider>
+          {children}
+        </LanguageProvider>
       </body>
     </html>
   );

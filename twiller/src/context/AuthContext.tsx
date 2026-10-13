@@ -11,8 +11,10 @@ import {
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { auth } from "./firebase";
 import axiosInstance from "../lib/axiosInstance";
+import { UAParser } from "ua-parser-js";
 
 interface User {
+  phone: string;
   _id: string;
   username: string;
   displayName: string;
@@ -26,7 +28,7 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<string>;
   signup: (
     email: string,
     password: string,
@@ -64,7 +66,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     // Check for existing session
     const unsubcribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      const pendingOTP = localStorage.getItem("otp-email");
+
+if (pendingOTP) {
+  setIsLoading(false);
+  return;
+}
       if (firebaseUser?.email) {
+        const pendingOTP = localStorage.getItem("otp-email");
+
+if (pendingOTP) {
+  console.log("OTP verification pending...");
+  setIsLoading(false);
+  return;
+}
         try {
           const res = await axiosInstance.get("/loggedinuser", {
             params: { email: firebaseUser.email },
@@ -73,6 +88,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           if (res.data) {
             setUser(res.data);
             localStorage.setItem("twitter-user", JSON.stringify(res.data));
+
+            const parser = new UAParser(window.navigator.userAgent);
+            
+            const browser = parser.getBrowser().name || "Unknown";
+            const operatingSystem = parser.getOS().name || "Unknown";
+            const deviceType = parser.getDevice().type || "Desktop";
+
+            const ipResponse = await fetch("https://api.ipify.org?format=json");
+            const ipData = await ipResponse.json();
+try {
+  await axiosInstance.post("/login-history", {
+    userId: res.data._id,
+    browser,
+    operatingSystem,
+    deviceType,
+    ipAddress: ipData.ip,
+  });
+} catch (error: any) {
+  if (error.response?.status === 403) {
+    alert(error.response.data.message);
+
+    await signOut(auth);
+
+    setUser(null);
+
+    localStorage.removeItem("twitter-user");
+
+    return;
+  }
+
+  console.error(error);
+}
           }
         } catch (err) {
           console.log("Failed to fetch user:", err);
@@ -90,6 +137,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsLoading(true);
     // Mock authentication - in real app, this would call an API
     const usercred = await signInWithEmailAndPassword(auth, email, password);
+    // Detect browser
+const result = UAParser();
+
+const browser = result.browser.name || "Unknown";
+const deviceType = result.device.type || "Desktop";
+
+
+// Chrome → OTP Required
+if (browser.includes("Chrome")) {
+  await axiosInstance.post("/send-otp", {
+    email,
+  });
+
+   await signOut(auth);
+
+  localStorage.setItem("otp-email", email);
+localStorage.setItem("otp-password", password);
+
+  window.location.href = "/verify-otp";
+
+  setIsLoading(false);
+
+  return "otp";
+}
     const firebaseuser = usercred.user;
     const res = await axiosInstance.get("/loggedinuser", {
       params: { email: firebaseuser.email },
@@ -107,6 +178,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     //   joinedDate: 'April 2024'
     // };
     setIsLoading(false);
+    return "success";
   };
 
   const signup = async (
@@ -194,28 +266,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       let userData;
 
       const res = await axiosInstance.get("/loggedinuser", {
-  params: { email: firebaseuser.email },
-});
+        params: { email: firebaseuser.email },
+      });
 
-if (res.data) {
-  userData = res.data;
-} else {
-  const newuser = {
-    username: firebaseuser.email.split("@")[0],
-    displayName: firebaseuser.displayName || "User",
-    avatar:
-      firebaseuser.photoURL ||
-      "https://images.pexels.com/photos/1139743/pexels-photo-1139743.jpeg?auto=compress&cs=tinysrgb&w=400",
-    email: firebaseuser.email,
-  };
+      if (res.data) {
+        userData = res.data;
+      } else {
+        const newuser = {
+          username: firebaseuser.email.split("@")[0],
+          displayName: firebaseuser.displayName || "User",
+          avatar:
+            firebaseuser.photoURL ||
+            "https://images.pexels.com/photos/1139743/pexels-photo-1139743.jpeg?auto=compress&cs=tinysrgb&w=400",
+          email: firebaseuser.email,
+        };
 
-  const registerRes = await axiosInstance.post("/register", newuser);
-  userData = registerRes.data;
-}
+        const registerRes = await axiosInstance.post("/register", newuser);
+        userData = registerRes.data;
+      }
 
       if (userData) {
         setUser(userData);
         localStorage.setItem("twitter-user", JSON.stringify(userData));
+
+        const result = UAParser();
+
+const browser = result.browser.name || "Unknown";
+const operatingSystem = result.os.name || "Unknown";
+const deviceType = result.device.type || "Desktop";
+
+        const ipResponse = await fetch("https://api.ipify.org?format=json");
+        const ipData = await ipResponse.json();
+
+        await axiosInstance.post("/login-history", {
+          userId: userData._id,
+          browser,
+          operatingSystem,
+          deviceType,
+          ipAddress: ipData.ip,
+        });
+
       } else {
         throw new Error("Login/Register failed: No user data returned");
       }
