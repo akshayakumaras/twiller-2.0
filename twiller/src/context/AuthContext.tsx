@@ -79,6 +79,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     let cancelled = false;
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log(
+  "Firebase auth state:",
+  firebaseUser ? firebaseUser.email : "No Firebase user"
+);
       if (cancelled) return;
 
       const pendingOTP = localStorage.getItem("otp-email");
