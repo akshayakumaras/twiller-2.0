@@ -22,7 +22,7 @@ export default function ForgotPasswordPage() {
     }
 
     try {
-      const r = await fetch(
+      const res = await fetch(
   `${process.env.NEXT_PUBLIC_BACKEND_URL}/forgot-password`,
   {
         method: "POST",
