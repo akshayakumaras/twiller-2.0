@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, {
@@ -8,15 +7,16 @@ import React, {
   useEffect,
 } from "react";
 
+
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
-  getRedirectResult,
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  signInWithRedirect,
+  signInWithPopup,
   signOut,
 } from "firebase/auth";
+
 
 import { auth } from "./firebase";
 import axiosInstance from "../lib/axiosInstance";
@@ -336,28 +336,30 @@ useEffect(() => {
   };
 
   // Google login using redirect instead of popup.
-  const googlesignin = async (): Promise<void> => {
-    setIsLoading(true);
 
-    try {
-      const googleAuthProvider = new GoogleAuthProvider();
+const googlesignin = async (): Promise<void> => {
+  setIsLoading(true);
 
-      await signInWithRedirect(auth, googleAuthProvider);
+  try {
+    const googleAuthProvider = new GoogleAuthProvider();
 
-      // The browser leaves this page for Google.
-      // onAuthStateChanged handles Firebase auth after the redirect.
-    } catch (error: unknown) {
-      console.error("Google Sign-In Error:", error);
+    await signInWithPopup(auth, googleAuthProvider);
 
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Google login failed. Please try again.";
+    // onAuthStateChanged will load the existing Twiller profile.
+  } catch (error: unknown) {
+    console.error("Google Sign-In Error:", error);
 
-      alert(message);
-      setIsLoading(false);
-    }
-  };
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Google login failed. Please try again.";
+
+    alert(message);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 
   return (
     <AuthContext.Provider
