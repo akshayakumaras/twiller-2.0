@@ -22,7 +22,9 @@ export default function ForgotPasswordPage() {
     }
 
     try {
-      const res = await fetch("http://localhost:5001/forgot-password", {
+      const r = await fetch(
+  `${process.env.NEXT_PUBLIC_BACKEND_URL}/forgot-password`,
+  {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
