@@ -11,6 +11,7 @@ import React, {
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
+  getRedirectResult,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithRedirect,
@@ -75,10 +76,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Listen for Firebase authentication changes.
   // This also handles the user after Google redirects back to Twiller.
-  useEffect(() => {
-    let cancelled = false;
+  
+useEffect(() => {
+  let cancelled = false;
 
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+  // Diagnose the Google sign-in redirect.
+  getRedirectResult(auth)
+    .then((result) => {
+      console.log(
+        "Google redirect result:",
+        result?.user?.email ?? "No redirect result"
+      );
+    })
+    .catch((error) => {
+      console.error(
+        "Google redirect error:",
+        error.code,
+        error.message
+      );
+    });
+
+  const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+
       console.log(
   "Firebase auth state:",
   firebaseUser ? firebaseUser.email : "No Firebase user"
