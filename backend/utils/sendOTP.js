@@ -13,7 +13,6 @@ const getSender = () => {
   return sender;
 };
 
-// Escape dynamic text before inserting it into HTML emails.
 const escapeHtml = (value = "") =>
   String(value).replace(/[&<>"']/g, (char) => {
     const entities = {
@@ -25,7 +24,15 @@ const escapeHtml = (value = "") =>
     };
 
     return entities[char];
-  });
+  };
+
+const normalizeEmail = (email) => {
+  if (typeof email !== "string" || !email.trim()) {
+    throw new Error("A valid recipient email is required");
+  }
+
+  return email.trim().toLowerCase();
+};
 
 // Send an email through Resend.
 const sendEmail = async ({ to, subject, html }) => {
@@ -33,19 +40,27 @@ const sendEmail = async ({ to, subject, html }) => {
     throw new Error("RESEND_API_KEY is not configured");
   }
 
+  const recipient = normalizeEmail(to);
+
   const { data, error } = await resend.emails.send({
     from: getSender(),
-    to,
+    to: [recipient],
     subject,
     html,
   });
 
   if (error) {
-    console.error("Resend email error:", error);
+    console.error("Resend email error:", {
+      message: error.message,
+      name: error.name,
+      statusCode: error.statusCode,
+    });
+
     throw new Error(error.message || "Failed to send email");
   }
 
   console.log("Email sent successfully. Resend ID:", data?.id);
+
   return data;
 };
 
@@ -54,18 +69,21 @@ const sendEmail = async ({ to, subject, html }) => {
 // ==========================================
 
 export const sendOTP = async (email, otp) => {
-  if (!email || !otp) {
-    throw new Error("Email and OTP are required");
+  if (!otp) {
+    throw new Error("OTP is required");
   }
 
-  await sendEmail({
-    to: email,
+  const recipient = normalizeEmail(email);
+  const safeOtp = escapeHtml(otp);
+
+  return sendEmail({
+    to: recipient,
     subject: "Twiller Login OTP",
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
         <h2>Twiller Login Verification</h2>
         <p>Your verification code is:</p>
-        <h1 style="letter-spacing: 5px;">${escapeHtml(otp)}</h1>
+        <h1 style="letter-spacing: 5px;">${safeOtp}</h1>
         <p>This OTP expires in 5 minutes.</p>
         <p>If you did not request this code, you can ignore this email.</p>
       </div>
@@ -87,15 +105,13 @@ export const sendSubscriptionInvoice = async ({
   startDate,
   endDate,
 }) => {
-  if (!email) {
-    throw new Error("Recipient email is required");
-  }
+  const recipient = normalizeEmail(email);
 
   const safeName = escapeHtml(name || "User");
   const safePlan = escapeHtml(plan || "Subscription");
-  const safeAmount = escapeHtml(amount);
-  const safePaymentId = escapeHtml(paymentId);
-  const safeOrderId = escapeHtml(orderId);
+  const safeAmount = escapeHtml(amount ?? "0");
+  const safePaymentId = escapeHtml(paymentId || "Not available");
+  const safeOrderId = escapeHtml(orderId || "Not available");
 
   const formatDate = (value) => {
     const date = new Date(value);
@@ -107,9 +123,12 @@ export const sendSubscriptionInvoice = async ({
         });
   };
 
-  await sendEmail({
-    to: email,
-    subject: `Twiller ${plan} Plan Subscription Invoice`,
+  const safeStartDate = formatDate(startDate);
+  const safeEndDate = formatDate(endDate);
+
+  const result = await sendEmail({
+    to: recipient,
+    subject: `Twiller ${plan || "Subscription"} Plan Subscription Invoice`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
         <h2 style="color: #1d9bf0;">Twiller Subscription Successful</h2>
@@ -124,8 +143,8 @@ export const sendSubscriptionInvoice = async ({
         <p><strong>Amount:</strong> ₹${safeAmount}</p>
         <p><strong>Payment ID:</strong> ${safePaymentId}</p>
         <p><strong>Order ID:</strong> ${safeOrderId}</p>
-        <p><strong>Start Date:</strong> ${formatDate(startDate)}</p>
-        <p><strong>End Date:</strong> ${formatDate(endDate)}</p>
+        <p><strong>Start Date:</strong> ${safeStartDate}</p>
+        <p><strong>End Date:</strong> ${safeEndDate}</p>
 
         <hr />
 
@@ -138,4 +157,6 @@ export const sendSubscriptionInvoice = async ({
   });
 
   console.log("Subscription invoice email sent successfully.");
+
+  return result;
 };
