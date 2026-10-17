@@ -14,7 +14,7 @@ const getSender = () => {
 };
 
 const escapeHtml = (value = "") =>
-  String(value).replace(/[&<>"']/g, (char) => {
+  String(value).replace(/\\[&<>"']/g, (char) => {
     const entities = {
       "&": "&amp;",
       "<": "&lt;",
@@ -24,7 +24,7 @@ const escapeHtml = (value = "") =>
     };
 
     return entities[char];
-  };
+  });
 
 const normalizeEmail = (email) => {
   if (typeof email !== "string" || !email.trim()) {
