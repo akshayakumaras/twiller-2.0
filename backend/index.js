@@ -1420,6 +1420,7 @@ app.post(
         email
       } = req.body;
 
+      console.log("OTP recipient:", email);
 
       const user =
         await User.findOne({
@@ -1483,81 +1484,65 @@ app.post(
 );
 
 
-// ==========================================
-// VERIFY LOGIN OTP
-// ==========================================
+app.post("/verify-otp", async (req, res) => {
+  try {
+    const email =
+      typeof req.body.email === "string"
+        ? req.body.email.trim().toLowerCase()
+        : "";
 
-app.post(
-  "/verify-otp",
-  async (req, res) => {
+    const otp =
+      typeof req.body.otp === "string"
+        ? req.body.otp.trim()
+        : String(req.body.otp ?? "").trim();
 
-    try {
-
-      const {
-        email,
-        otp
-      } = req.body;
-
-
-      const user =
-        await User.findOne({
-          email,
-        });
-
-
-      if (!user) {
-
-        return res.status(404).send({
-          message:
-            "User not found",
-        });
-      }
-
-
-      if (
-        user.loginOTP !== otp ||
-        !user.otpExpiry ||
-        user.otpExpiry <
-          new Date()
-      ) {
-
-        return res.status(400).send({
-          message:
-            "Invalid or expired OTP",
-        });
-      }
-
-
-      user.loginOTP = "";
-
-      user.otpExpiry = null;
-
-
-      await user.save();
-
-
-      return res
-        .status(200)
-        .send({
-
-          message:
-            "OTP verified successfully",
-        });
-
-    } catch (error) {
-
-      return res.status(500).send({
-        message:
-          error.message,
+    if (!email || !/^\d{6}$/.test(otp)) {
+      return res.status(400).json({
+        message: "Please provide a valid email and 6-digit OTP.",
       });
     }
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found.",
+      });
+    }
+
+    const storedOTP = String(user.loginOTP ?? "").trim();
+    const expiry = user.otpExpiry
+      ? new Date(user.otpExpiry)
+      : null;
+
+    if (
+      storedOTP !== otp ||
+      !expiry ||
+      Number.isNaN(expiry.getTime()) ||
+      expiry.getTime() <= Date.now()
+    ) {
+      return res.status(400).json({
+        message: "Invalid or expired OTP. Request a new OTP and try again.",
+      });
+    }
+
+    // Clear the OTP so it cannot be reused.
+    user.loginOTP = "";
+    user.otpExpiry = null;
+    await user.save();
+
+    return res.status(200).json({
+      message: "OTP verified successfully.",
+    });
+  } catch (error) {
+    console.error("OTP verification error:", error);
+
+    return res.status(500).json({
+      message: "Server error while verifying OTP.",
+    });
   }
-);
+});
 
-
-// ==========================================
-// LANGUAGE CHANGE - SEND OTP
-// ==========================================
 
 app.post(
   "/send-language-otp",
