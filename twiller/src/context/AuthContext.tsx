@@ -7,17 +7,14 @@ import React, {
   useEffect,
 } from "react";
 
-
 import {
   createUserWithEmailAndPassword,
-  getRedirectResult,
   GoogleAuthProvider,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
 } from "firebase/auth";
-
 
 import { auth } from "./firebase";
 import axiosInstance from "../lib/axiosInstance";
@@ -62,12 +59,24 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const useAuth = () => {
   const context = useContext(AuthContext);
 
-  if (context === undefined) {
+  if (!context) {
     throw new Error("useAuth must be used within an AuthProvider");
   }
 
   return context;
 };
+
+// Identify Chrome without accidentally treating Edge as Chrome.
+function getBrowserName(): string {
+  if (typeof window === "undefined") return "Unknown";
+
+  const parser = new UAParser(window.navigator.userAgent);
+  return parser.getBrowser().name || "Unknown";
+}
+
+function requiresEmailOTP(): boolean {
+  return getBrowserName() === "Chrome";
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -75,39 +84,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Listen for Firebase authentication changes.
-  // This also handles the user after Google redirects back to Twiller.
-  
-useEffect(() => {
-  let cancelled = false;
+  useEffect(() => {
+    let cancelled = false;
 
-  // Diagnose the Google sign-in redirect.
-  getRedirectResult(auth)
-    .then((result) => {
-      console.log(
-        "Google redirect result:",
-        result?.user?.email ?? "No redirect result"
-      );
-    })
-    .catch((error) => {
-      console.error(
-        "Google redirect error:",
-        error.code,
-        error.message
-      );
-    });
-
-  const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-
-      console.log(
-  "Firebase auth state:",
-  firebaseUser ? firebaseUser.email : "No Firebase user"
-);
+    const loadUser = async (firebaseUser: {
+      email: string | null;
+    } | null) => {
       if (cancelled) return;
 
+      // Do not load the profile while login OTP is pending.
       const pendingOTP = localStorage.getItem("otp-email");
+      const otpCheck = localStorage.getItem("auth-otp-check");
 
-      if (pendingOTP) {
+      if (pendingOTP || otpCheck) {
         setIsLoading(false);
         return;
       }
@@ -126,63 +115,86 @@ useEffect(() => {
 
         if (cancelled) return;
 
-        if (response.data) {
-          setUser(response.data);
-          localStorage.setItem(
-            "twitter-user",
-            JSON.stringify(response.data)
-          );
+        if (!response.data) {
+          setUser(null);
+          localStorage.removeItem("twitter-user");
+          setIsLoading(false);
+          return;
+        }
 
-          // Record login details.
+        const profile = response.data as User;
+
+        setUser(profile);
+        localStorage.setItem("twitter-user", JSON.stringify(profile));
+
+        // Record login information. A logging failure should not prevent
+        // an otherwise successful login.
+        try {
           const parser = new UAParser(window.navigator.userAgent);
 
           const browser = parser.getBrowser().name || "Unknown";
           const operatingSystem = parser.getOS().name || "Unknown";
           const deviceType = parser.getDevice().type || "Desktop";
 
+          let ipAddress = "Unknown";
+
           try {
             const ipResponse = await fetch(
               "https://api.ipify.org?format=json"
             );
-            const ipData = await ipResponse.json();
 
-            await axiosInstance.post("/login-history", {
-              userId: response.data._id,
-              browser,
-              operatingSystem,
-              deviceType,
-              ipAddress: ipData.ip,
-            });
-          } catch (error: any) {
-            if (error.response?.status === 403) {
-              alert(error.response.data.message);
-
-              await signOut(auth);
-
-              if (!cancelled) {
-                setUser(null);
-                localStorage.removeItem("twitter-user");
-              }
-
-              return;
+            if (ipResponse.ok) {
+              const ipData = await ipResponse.json();
+              ipAddress = ipData.ip || "Unknown";
             }
+          } catch {
+            console.warn("Could not retrieve IP address.");
+          }
 
+          await axiosInstance.post("/login-history", {
+            userId: profile._id,
+            browser,
+            operatingSystem,
+            deviceType,
+            ipAddress,
+          });
+        } catch (error: unknown) {
+          const apiError = error as {
+            response?: {
+              status?: number;
+              data?: { message?: string };
+            };
+          };
+
+          if (apiError.response?.status === 403) {
+            alert(
+              apiError.response.data?.message ||
+                "Login is not allowed at this time."
+            );
+
+            await signOut(auth);
+
+            if (!cancelled) {
+              setUser(null);
+              localStorage.removeItem("twitter-user");
+            }
+          } else {
             console.error("Failed to record login history:", error);
           }
-        } else {
-          setUser(null);
-          localStorage.removeItem("twitter-user");
         }
       } catch (error) {
-        console.error("Failed to fetch Twiller user:", error);
-
-        // Do not automatically sign out of Firebase because a
-        // temporary backend/network error may have caused this.
+        console.error("Failed to load Twiller profile:", error);
+        // Keep the Firebase session; a temporary API failure should not
+        // automatically sign the user out.
       } finally {
         if (!cancelled) {
           setIsLoading(false);
         }
       }
+    };
+
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      void loadUser(firebaseUser);
     });
 
     return () => {
@@ -191,7 +203,7 @@ useEffect(() => {
     };
   }, []);
 
-  // Email and password login.
+  // Email/password login.
   const login = async (
     email: string,
     password: string
@@ -199,53 +211,54 @@ useEffect(() => {
     setIsLoading(true);
 
     try {
-      const userCredential = await signInWithEmailAndPassword(
+      localStorage.setItem("auth-otp-check", "true");
+
+      const credential = await signInWithEmailAndPassword(
         auth,
         email,
         password
       );
 
-      const parser = new UAParser();
-      const browser = parser.getBrowser().name || "Unknown";
+      const authenticatedEmail = credential.user.email;
 
-      // Chrome requires email OTP.
-      if (browser.includes("Chrome")) {
-        await axiosInstance.post("/send-otp", { email });
+      if (!authenticatedEmail) {
+        throw new Error("No email address is associated with this account.");
+      }
 
-        await signOut(auth);
-
-        localStorage.setItem("otp-email", email);
+      if (requiresEmailOTP()) {
+        // Save the pending OTP state before sending the request.
+        localStorage.setItem("otp-email", authenticatedEmail);
+        localStorage.setItem("otp-login-method", "password");
         localStorage.setItem("otp-password", password);
 
-        window.location.href = "/verify-otp";
+        await axiosInstance.post("/send-otp", {
+          email: authenticatedEmail,
+        });
 
+        // Password-login OTP flow signs out until OTP is verified.
+        await signOut(auth);
+
+        localStorage.removeItem("auth-otp-check");
+
+        window.location.href = "/verify-otp";
         return "otp";
       }
 
-      const firebaseUser = userCredential.user;
+      // Microsoft Edge and other browsers do not require this extra OTP.
+      localStorage.removeItem("auth-otp-check");
 
-      if (firebaseUser.email) {
-        const response = await axiosInstance.get("/loggedinuser", {
-          params: { email: firebaseUser.email },
-        });
-
-        if (response.data) {
-          setUser(response.data);
-          localStorage.setItem(
-            "twitter-user",
-            JSON.stringify(response.data)
-          );
-        }
-      }
+      // Let onAuthStateChanged load the existing profile.
+      window.location.reload();
 
       return "success";
     } catch (error) {
+      localStorage.removeItem("auth-otp-check");
       setIsLoading(false);
       throw error;
     }
   };
 
-  // Email and password signup.
+  // Email/password signup.
   const signup = async (
     email: string,
     password: string,
@@ -255,34 +268,28 @@ useEffect(() => {
     setIsLoading(true);
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(
+      const credential = await createUserWithEmailAndPassword(
         auth,
         email,
         password
       );
 
-      const firebaseUser = userCredential.user;
-
       const newUser = {
         username,
         displayName,
         avatar:
-          firebaseUser.photoURL ||
+          credential.user.photoURL ||
           "https://images.pexels.com/photos/1139743/pexels-photo-1139743.jpeg?auto=compress&cs=tinysrgb&w=400",
-        email: firebaseUser.email,
+        email: credential.user.email,
       };
 
       const response = await axiosInstance.post("/register", newUser);
 
       if (response.data) {
         setUser(response.data);
-        localStorage.setItem(
-          "twitter-user",
-          JSON.stringify(response.data)
-        );
+        localStorage.setItem("twitter-user", JSON.stringify(response.data));
       }
     } catch (error) {
-      setIsLoading(false);
       throw error;
     } finally {
       setIsLoading(false);
@@ -294,7 +301,12 @@ useEffect(() => {
     try {
       await signOut(auth);
       setUser(null);
+
       localStorage.removeItem("twitter-user");
+      localStorage.removeItem("otp-email");
+      localStorage.removeItem("otp-login-method");
+      localStorage.removeItem("otp-password");
+      localStorage.removeItem("auth-otp-check");
     } catch (error) {
       console.error("Logout failed:", error);
       throw error;
@@ -336,31 +348,61 @@ useEffect(() => {
     }
   };
 
-  // Google login using redirect instead of popup.
+  // Google login.
+  const googlesignin = async (): Promise<void> => {
+    setIsLoading(true);
 
-const googlesignin = async (): Promise<void> => {
-  setIsLoading(true);
+    try {
+      localStorage.setItem("auth-otp-check", "true");
 
-  try {
-    const googleAuthProvider = new GoogleAuthProvider();
+      const provider = new GoogleAuthProvider();
+      const credential = await signInWithPopup(auth, provider);
+      const email = credential.user.email;
 
-    await signInWithPopup(auth, googleAuthProvider);
+      if (!email) {
+        throw new Error("Google did not return an email address.");
+      }
 
-    // onAuthStateChanged will load the existing Twiller profile.
-  } catch (error: unknown) {
-    console.error("Google Sign-In Error:", error);
+      if (requiresEmailOTP()) {
+        // Chrome requires OTP for Google login too.
+        localStorage.setItem("otp-email", email);
+        localStorage.setItem("otp-login-method", "google");
 
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Google login failed. Please try again.";
+        await axiosInstance.post("/send-otp", { email });
 
-    alert(message);
-  } finally {
-    setIsLoading(false);
-  }
-};
+        // Keep the Google Firebase session active. Do not call
+        // signOut here; Google login has no password to reuse.
+        localStorage.removeItem("auth-otp-check");
 
+        window.location.href = "/verify-otp";
+        return;
+      }
+
+      // Edge skips additional OTP and loads the existing profile.
+      localStorage.removeItem("auth-otp-check");
+      window.location.reload();
+    } catch (error: unknown) {
+      console.error("Google Sign-In Error:", error);
+
+      localStorage.removeItem("auth-otp-check");
+      localStorage.removeItem("otp-email");
+      localStorage.removeItem("otp-login-method");
+
+      try {
+        await signOut(auth);
+      } catch (signOutError) {
+        console.error("Could not clear failed Google session:", signOutError);
+      }
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Google login failed. Please try again.";
+
+      alert(message);
+      setIsLoading(false);
+    }
+  };
 
   return (
     <AuthContext.Provider
