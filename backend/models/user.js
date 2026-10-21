@@ -87,6 +87,11 @@ const UserSchema = mongoose.Schema({
     default: null,
   },
 
+  audioOTPVerifiedUntil: {
+    type: Date,
+    default: null,
+  },
+
   audio: {
     type: String,
     default: null,

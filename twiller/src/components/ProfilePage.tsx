@@ -1,3 +1,4 @@
+import { setNotificationsEnabled as saveNotificationPreference } from "@/utils/notification";
 "use client";
 
 import React, { useEffect, useState } from "react";

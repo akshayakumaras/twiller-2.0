@@ -5,6 +5,8 @@ import LoadingSpinner from "./loading-spinner";
 import TweetCard from "./TweetCard";
 import TweetComposer from "./TweetComposer";
 import axiosInstance from "@/lib/axiosInstance";
+import { useAuth } from "@/context/AuthContext";
+import { showKeywordNotification, requestNotificationPermission } from "@/utils/notification";
 
 interface Tweet {
   id: string;
@@ -86,23 +88,62 @@ const tweets: Tweet[] = [
   },
 ];
 const Feed = () => {
+  const { user } = useAuth();
   const [tweets, setTweets] = useState<any>([]);
   const [loading, setloading] = useState(false);
-  const fetchTweets = async () => {
+  const seenTweetIds = React.useRef<Set<string>>(new Set());
+  const hasInitialFeedLoaded = React.useRef(false);
+  const fetchTweets = async (notifyNewTweets = false) => {
     try {
-      setloading(true);
       const res = await axiosInstance.get("/post");
-      setTweets(res.data);
+      const incoming = Array.isArray(res.data) ? res.data : [];
+      const currentIds = new Set<string>(
+        incoming.map((tweet: any) => String(tweet._id || tweet.id))
+      );
+
+      if (hasInitialFeedLoaded.current && notifyNewTweets) {
+        for (const tweet of incoming) {
+          const id = String(tweet._id || tweet.id || "");
+          if (!id || seenTweetIds.current.has(id)) continue;
+
+          const authorId = String(
+            tweet.author?._id || tweet.author?.id || tweet.author || ""
+          );
+          const currentUserId = String(user?._id || "");
+          if (authorId && currentUserId && authorId !== currentUserId) {
+            showKeywordNotification(tweet.content || "", {
+              author: tweet.author?.displayName || tweet.author?.username,
+              tweetId: id,
+            });
+          }
+        }
+      }
+
+      seenTweetIds.current = currentIds;
+      hasInitialFeedLoaded.current = true;
+      setTweets(incoming);
     } catch (error) {
-      console.error(error);
+      console.error("Failed to refresh tweets:", error);
     } finally {
       setloading(false);
     }
   };
+
   useEffect(() => {
-    fetchTweets();
-  }, []);
+    setloading(true);
+    if (localStorage.getItem("notificationsEnabled") === "true") {
+      void requestNotificationPermission();
+    }
+    void fetchTweets(false);
+    const intervalId = window.setInterval(() => {
+      void fetchTweets(true);
+    }, 30000);
+    return () => window.clearInterval(intervalId);
+  }, [user?._id, user?.id]);
+
   const handlenewtweet = (newtweet: any) => {
+    const id = String(newtweet?._id || newtweet?.id || "");
+    if (id) seenTweetIds.current.add(id);
     setTweets((prev: any) => [newtweet, ...prev]);
   };
   return (

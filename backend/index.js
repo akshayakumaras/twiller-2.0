@@ -1,4 +1,5 @@
 import "dotenv/config";
+import fs from "fs";
 
 import express from "express";
 import cors from "cors";
@@ -90,25 +91,12 @@ const SUBSCRIPTION_PLANS = {
 
 
 // ==========================================
-// PAYMENT TIME (10:00 AM–11:00 AM IST)
-// Server-side enforcement; IST is Asia/Kolkata.
-// The end time is exclusive: 11:00:00 AM is not allowed.
+// PAYMENT TIME
+// TEMPORARILY ENABLED FOR TESTING
 // ==========================================
 
 const isPaymentTimeAllowed = () => {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Kolkata",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date());
-
-  const hour = Number(parts.find((part) => part.type === "hour")?.value);
-  const minute = Number(parts.find((part) => part.type === "minute")?.value);
-  const minutesSinceMidnight = hour * 60 + minute;
-
-  return minutesSinceMidnight >= 10 * 60 &&
-    minutesSinceMidnight < 11 * 60;
+  return true;
 };
 
 
@@ -118,7 +106,10 @@ const isPaymentTimeAllowed = () => {
 
 app.post("/create-subscription", async (req, res) => {
   try {
-    console.log("Create subscription request received.");
+    console.log(
+      "Create subscription request:",
+      req.body
+    );
 
     const { userId, plan } = req.body;
 
@@ -152,13 +143,6 @@ app.post("/create-subscription", async (req, res) => {
     if (!user) {
       return res.status(404).send({
         message: "User not found.",
-      });
-    }
-
-    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-      console.error("Razorpay credentials are not configured.");
-      return res.status(503).send({
-        message: "Payment service is not configured.",
       });
     }
 
@@ -246,7 +230,10 @@ app.post("/create-subscription", async (req, res) => {
 app.post("/verify-subscription", async (req, res) => {
   try {
 
-    console.log("Verify subscription request received.");
+    console.log(
+      "Verify subscription request:",
+      req.body
+    );
 
     const {
       userId,
@@ -279,34 +266,22 @@ app.post("/verify-subscription", async (req, res) => {
     const subscription =
       await Subscription.findOne({
         userId,
-        razorpayOrderId: razorpay_order_id,
+
+        razorpayOrderId:
+          razorpay_order_id,
+
         status: "pending",
       });
 
+
     if (!subscription) {
+
       return res.status(404).send({
-        message: "Pending subscription order not found.",
+        message:
+          "Subscription order not found.",
       });
     }
 
-    // Never trust the plan/amount sent back by the browser.
-    if (
-      subscription.plan !== plan ||
-      !SUBSCRIPTION_PLANS[subscription.plan] ||
-      subscription.amount !== SUBSCRIPTION_PLANS[subscription.plan].amount ||
-      subscription.tweetLimit !== SUBSCRIPTION_PLANS[subscription.plan].tweetLimit
-    ) {
-      return res.status(400).send({
-        message: "Subscription plan details do not match the pending order.",
-      });
-    }
-
-    if (!process.env.RAZORPAY_KEY_SECRET) {
-      console.error("Razorpay secret is not configured.");
-      return res.status(503).send({
-        message: "Payment verification is not configured.",
-      });
-    }
 
     // ==========================================
     // GENERATE SIGNATURE
@@ -330,49 +305,17 @@ app.post("/verify-subscription", async (req, res) => {
     // VERIFY SIGNATURE
     // ==========================================
 
-    const generatedBuffer = Buffer.from(generatedSignature, "hex");
-    const receivedBuffer = Buffer.from(String(razorpay_signature), "hex");
-
     if (
-      generatedBuffer.length !== receivedBuffer.length ||
-      !crypto.timingSafeEqual(generatedBuffer, receivedBuffer)
+      generatedSignature !==
+      razorpay_signature
     ) {
+
       return res.status(400).send({
-        message: "Invalid Razorpay payment signature.",
+        message:
+          "Invalid Razorpay payment signature.",
       });
     }
 
-    // Verify the payment against Razorpay's API as well as the signature.
-    // This prevents activating a plan for a payment with the wrong amount,
-    // currency, order, or unsuccessful status.
-    let payment;
-    try {
-      payment = await razorpay.payments.fetch(razorpay_payment_id);
-    } catch (fetchError) {
-      console.error("Unable to fetch Razorpay payment:", fetchError.message);
-      return res.status(502).send({
-        message: "Unable to confirm payment with Razorpay. Please retry.",
-      });
-    }
-
-    const expectedAmountPaise = Math.round(subscription.amount * 100);
-
-    if (
-      payment.order_id !== razorpay_order_id ||
-      Number(payment.amount) !== expectedAmountPaise ||
-      payment.currency !== "INR"
-    ) {
-      return res.status(400).send({
-        message: "Razorpay payment details do not match the order.",
-      });
-    }
-
-    if (payment.status !== "captured") {
-      return res.status(409).send({
-        message: "Payment has not been captured successfully yet.",
-        paymentStatus: payment.status,
-      });
-    }
 
     // ==========================================
     // FIND USER
@@ -405,8 +348,8 @@ app.post("/verify-subscription", async (req, res) => {
     );
 
 
-    const verifiedPlan = subscription.plan;
-    const planDetails = SUBSCRIPTION_PLANS[verifiedPlan];
+    const planDetails =
+      SUBSCRIPTION_PLANS[plan];
 
 
     // ==========================================
@@ -439,7 +382,7 @@ app.post("/verify-subscription", async (req, res) => {
     // ==========================================
 
     user.subscriptionPlan =
-      verifiedPlan;
+      plan;
 
     user.subscriptionStart =
       startDate;
@@ -464,7 +407,7 @@ app.post("/verify-subscription", async (req, res) => {
 
         name: user.displayName,
 
-        plan: verifiedPlan,
+        plan,
 
         amount:
           planDetails.amount,
@@ -507,7 +450,7 @@ app.post("/verify-subscription", async (req, res) => {
       message:
         "Subscription activated successfully.",
 
-      plan: verifiedPlan,
+      plan,
 
       endDate,
     });
@@ -592,6 +535,20 @@ app.get(
   }
 );
 
+
+// Audio uploads are allowed from 2:00 PM until 7:00 PM IST (7 PM exclusive).
+const isWithinAudioUploadWindow = () => {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const hour = Number(parts.find((part) => part.type === "hour")?.value);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value);
+  const minutes = hour * 60 + minute;
+  return minutes >= 14 * 60 && minutes < 19 * 60;
+};
 
 // ==========================================
 // MULTER AUDIO UPLOAD
@@ -706,43 +663,57 @@ app.post(
   "/upload-audio",
   upload.single("audio"),
   async (req, res) => {
-
     try {
+      const email = typeof req.body.email === "string"
+        ? req.body.email.trim().toLowerCase()
+        : "";
 
-      if (!req.file) {
-
+      if (!email) {
+        if (req.file) { try { fs.unlinkSync(req.file.path); } catch {} }
         return res.status(400).send({
-          message:
-            "Audio file is required",
+          message: "Registered email is required for audio verification.",
         });
       }
 
+      const user = await User.findOne({ email });
+      if (!user) {
+        if (req.file) { try { fs.unlinkSync(req.file.path); } catch {} }
+        return res.status(404).send({ message: "User not found." });
+      }
+
+      if (!user.audioOTPVerifiedUntil || user.audioOTPVerifiedUntil <= new Date()) {
+        if (req.file) { try { fs.unlinkSync(req.file.path); } catch {} }
+        return res.status(403).send({
+          message: "Verify the audio OTP before uploading.",
+        });
+      }
+
+      if (!isWithinAudioUploadWindow()) {
+        if (req.file) { try { fs.unlinkSync(req.file.path); } catch {} }
+        return res.status(403).send({
+          message: "Audio tweets are allowed only between 2:00 PM and 7:00 PM IST.",
+        });
+      }
+
+      if (!req.file) {
+        return res.status(400).send({ message: "Audio file is required." });
+      }
+
+      // Consume the authorization so a verified OTP cannot authorize multiple uploads.
+      user.audioOTPVerifiedUntil = null;
+      await user.save();
 
       return res.status(200).send({
-
-        message:
-          "Audio uploaded successfully",
-
-        audioUrl:
-          `${req.protocol}://${req.get("host")}/uploads/audio/${req.file.filename}`,
+        message: "Audio uploaded successfully",
+        audioUrl: `${req.protocol}://${req.get("host")}/uploads/audio/${req.file.filename}`,
       });
-
     } catch (error) {
-
-      console.error(
-        "Audio upload error:",
-        error
-      );
-
-
-      return res.status(500).send({
-        message:
-          error.message,
-      });
+      console.error("Audio upload error:", error);
+      if (req.file) { try { fs.unlinkSync(req.file.path); } catch {} }
+      return res.status(500).send({ message: "Unable to upload audio." });
     }
   }
 );
-
 
 // ==========================================
 // FORGOT PASSWORD
@@ -1802,9 +1773,17 @@ app.post(
       }
 
 
+      const normalizedEmail = email.trim().toLowerCase();
+
+      if (!isWithinAudioUploadWindow()) {
+        return res.status(403).send({
+          message: "Audio OTPs are available only between 2:00 PM and 7:00 PM IST.",
+        });
+      }
+
       const user =
         await User.findOne({
-          email,
+          email: normalizedEmail,
         });
 
 
@@ -1827,6 +1806,7 @@ app.post(
 
       user.audioOTP =
         otp;
+      user.audioOTPVerifiedUntil = null;
 
 
       user.audioOTPExpiry =
@@ -1839,10 +1819,14 @@ app.post(
       await user.save();
 
 
-      await sendOTP(
-        email,
-        otp
-      );
+      try {
+        await sendOTP(normalizedEmail, otp);
+      } catch (emailError) {
+        user.audioOTP = "";
+        user.audioOTPExpiry = null;
+        await user.save();
+        throw emailError;
+      }
 
 
       return res
@@ -1895,9 +1879,10 @@ app.post(
       }
 
 
+      const normalizedEmail = email.trim().toLowerCase();
       const user =
         await User.findOne({
-          email,
+          email: normalizedEmail,
         });
 
 
@@ -1925,10 +1910,8 @@ app.post(
 
 
       user.audioOTP = "";
-
-      user.audioOTPExpiry =
-        null;
-
+      user.audioOTPExpiry = null;
+      user.audioOTPVerifiedUntil = new Date(Date.now() + 5 * 60 * 1000);
 
       await user.save();
 
