@@ -139,7 +139,7 @@ const Feed = () => {
       void fetchTweets(true);
     }, 30000);
     return () => window.clearInterval(intervalId);
-  }, [user?._id, user?.id]);
+}, [user?._id]);
 
   const handlenewtweet = (newtweet: any) => {
     const id = String(newtweet?._id || newtweet?.id || "");
