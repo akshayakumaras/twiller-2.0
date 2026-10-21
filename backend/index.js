@@ -90,12 +90,25 @@ const SUBSCRIPTION_PLANS = {
 
 
 // ==========================================
-// PAYMENT TIME
-// TEMPORARILY ENABLED FOR TESTING
+// PAYMENT TIME (10:00 AM–11:00 AM IST)
+// Server-side enforcement; IST is Asia/Kolkata.
+// The end time is exclusive: 11:00:00 AM is not allowed.
 // ==========================================
 
 const isPaymentTimeAllowed = () => {
-  return true;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+
+  const hour = Number(parts.find((part) => part.type === "hour")?.value);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value);
+  const minutesSinceMidnight = hour * 60 + minute;
+
+  return minutesSinceMidnight >= 10 * 60 &&
+    minutesSinceMidnight < 11 * 60;
 };
 
 
@@ -105,10 +118,7 @@ const isPaymentTimeAllowed = () => {
 
 app.post("/create-subscription", async (req, res) => {
   try {
-    console.log(
-      "Create subscription request:",
-      req.body
-    );
+    console.log("Create subscription request received.");
 
     const { userId, plan } = req.body;
 
@@ -142,6 +152,13 @@ app.post("/create-subscription", async (req, res) => {
     if (!user) {
       return res.status(404).send({
         message: "User not found.",
+      });
+    }
+
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      console.error("Razorpay credentials are not configured.");
+      return res.status(503).send({
+        message: "Payment service is not configured.",
       });
     }
 
@@ -229,10 +246,7 @@ app.post("/create-subscription", async (req, res) => {
 app.post("/verify-subscription", async (req, res) => {
   try {
 
-    console.log(
-      "Verify subscription request:",
-      req.body
-    );
+    console.log("Verify subscription request received.");
 
     const {
       userId,
@@ -265,22 +279,34 @@ app.post("/verify-subscription", async (req, res) => {
     const subscription =
       await Subscription.findOne({
         userId,
-
-        razorpayOrderId:
-          razorpay_order_id,
-
+        razorpayOrderId: razorpay_order_id,
         status: "pending",
       });
 
-
     if (!subscription) {
-
       return res.status(404).send({
-        message:
-          "Subscription order not found.",
+        message: "Pending subscription order not found.",
       });
     }
 
+    // Never trust the plan/amount sent back by the browser.
+    if (
+      subscription.plan !== plan ||
+      !SUBSCRIPTION_PLANS[subscription.plan] ||
+      subscription.amount !== SUBSCRIPTION_PLANS[subscription.plan].amount ||
+      subscription.tweetLimit !== SUBSCRIPTION_PLANS[subscription.plan].tweetLimit
+    ) {
+      return res.status(400).send({
+        message: "Subscription plan details do not match the pending order.",
+      });
+    }
+
+    if (!process.env.RAZORPAY_KEY_SECRET) {
+      console.error("Razorpay secret is not configured.");
+      return res.status(503).send({
+        message: "Payment verification is not configured.",
+      });
+    }
 
     // ==========================================
     // GENERATE SIGNATURE
@@ -304,17 +330,49 @@ app.post("/verify-subscription", async (req, res) => {
     // VERIFY SIGNATURE
     // ==========================================
 
-    if (
-      generatedSignature !==
-      razorpay_signature
-    ) {
+    const generatedBuffer = Buffer.from(generatedSignature, "hex");
+    const receivedBuffer = Buffer.from(String(razorpay_signature), "hex");
 
+    if (
+      generatedBuffer.length !== receivedBuffer.length ||
+      !crypto.timingSafeEqual(generatedBuffer, receivedBuffer)
+    ) {
       return res.status(400).send({
-        message:
-          "Invalid Razorpay payment signature.",
+        message: "Invalid Razorpay payment signature.",
       });
     }
 
+    // Verify the payment against Razorpay's API as well as the signature.
+    // This prevents activating a plan for a payment with the wrong amount,
+    // currency, order, or unsuccessful status.
+    let payment;
+    try {
+      payment = await razorpay.payments.fetch(razorpay_payment_id);
+    } catch (fetchError) {
+      console.error("Unable to fetch Razorpay payment:", fetchError.message);
+      return res.status(502).send({
+        message: "Unable to confirm payment with Razorpay. Please retry.",
+      });
+    }
+
+    const expectedAmountPaise = Math.round(subscription.amount * 100);
+
+    if (
+      payment.order_id !== razorpay_order_id ||
+      Number(payment.amount) !== expectedAmountPaise ||
+      payment.currency !== "INR"
+    ) {
+      return res.status(400).send({
+        message: "Razorpay payment details do not match the order.",
+      });
+    }
+
+    if (payment.status !== "captured") {
+      return res.status(409).send({
+        message: "Payment has not been captured successfully yet.",
+        paymentStatus: payment.status,
+      });
+    }
 
     // ==========================================
     // FIND USER
@@ -347,8 +405,8 @@ app.post("/verify-subscription", async (req, res) => {
     );
 
 
-    const planDetails =
-      SUBSCRIPTION_PLANS[plan];
+    const verifiedPlan = subscription.plan;
+    const planDetails = SUBSCRIPTION_PLANS[verifiedPlan];
 
 
     // ==========================================
@@ -381,7 +439,7 @@ app.post("/verify-subscription", async (req, res) => {
     // ==========================================
 
     user.subscriptionPlan =
-      plan;
+      verifiedPlan;
 
     user.subscriptionStart =
       startDate;
@@ -406,7 +464,7 @@ app.post("/verify-subscription", async (req, res) => {
 
         name: user.displayName,
 
-        plan,
+        plan: verifiedPlan,
 
         amount:
           planDetails.amount,
@@ -449,7 +507,7 @@ app.post("/verify-subscription", async (req, res) => {
       message:
         "Subscription activated successfully.",
 
-      plan,
+      plan: verifiedPlan,
 
       endDate,
     });
