@@ -659,61 +659,137 @@ app.get("/", (req, res) => {
 // AUDIO UPLOAD
 // ==========================================
 
+
 app.post(
   "/upload-audio",
-  upload.single("audio"),
+  (req, res, next) => {
+    upload.single("audio")(req, res, (err) => {
+      if (err) {
+        console.error("Audio upload parsing error:", err);
+
+        return res.status(400).json({
+          message: err.message || "Unable to process audio upload.",
+        });
+      }
+
+      next();
+    });
+  },
   async (req, res) => {
     try {
-      const email = typeof req.body.email === "string"
-        ? req.body.email.trim().toLowerCase()
-        : "";
+      // Read the registered email from multipart form data.
+      const email =
+        typeof req.body?.email === "string"
+          ? req.body.email.trim().toLowerCase()
+          : "";
+
+      console.log("Audio upload received:", {
+        emailReceived: Boolean(email),
+        fileReceived: Boolean(req.file),
+        fileSize: req.file?.size,
+      });
 
       if (!email) {
-        if (req.file) { try { fs.unlinkSync(req.file.path); } catch {} }
-        return res.status(400).send({
-          message: "Registered email is required for audio verification.",
+        if (req.file) {
+          try {
+            fs.unlinkSync(req.file.path);
+          } catch (cleanupError) {
+            console.error("Audio cleanup error:", cleanupError);
+          }
+        }
+
+        return res.status(400).json({
+          message:
+            "Registered email is required for audio verification.",
         });
       }
 
       const user = await User.findOne({ email });
+
       if (!user) {
-        if (req.file) { try { fs.unlinkSync(req.file.path); } catch {} }
-        return res.status(404).send({ message: "User not found." });
+        if (req.file) {
+          try {
+            fs.unlinkSync(req.file.path);
+          } catch (cleanupError) {
+            console.error("Audio cleanup error:", cleanupError);
+          }
+        }
+
+        return res.status(404).json({
+          message: "User not found.",
+        });
       }
 
-      if (!user.audioOTPVerifiedUntil || user.audioOTPVerifiedUntil <= new Date()) {
-        if (req.file) { try { fs.unlinkSync(req.file.path); } catch {} }
-        return res.status(403).send({
+      // Require successful OTP verification within the last five minutes.
+      if (
+        !user.audioOTPVerifiedUntil ||
+        new Date(user.audioOTPVerifiedUntil).getTime() <= Date.now()
+      ) {
+        if (req.file) {
+          try {
+            fs.unlinkSync(req.file.path);
+          } catch (cleanupError) {
+            console.error("Audio cleanup error:", cleanupError);
+          }
+        }
+
+        return res.status(403).json({
           message: "Verify the audio OTP before uploading.",
         });
       }
 
+      // Enforce the 2 PM to 7 PM India Standard Time window.
       if (!isWithinAudioUploadWindow()) {
-        if (req.file) { try { fs.unlinkSync(req.file.path); } catch {} }
-        return res.status(403).send({
-          message: "Audio tweets are allowed only between 2:00 PM and 7:00 PM IST.",
+        if (req.file) {
+          try {
+            fs.unlinkSync(req.file.path);
+          } catch (cleanupError) {
+            console.error("Audio cleanup error:", cleanupError);
+          }
+        }
+
+        return res.status(403).json({
+          message:
+            "Audio tweets are allowed only between 2:00 PM and 7:00 PM IST.",
         });
       }
 
       if (!req.file) {
-        return res.status(400).send({ message: "Audio file is required." });
+        return res.status(400).json({
+          message: "Audio file is required.",
+        });
       }
 
-      // Consume the authorization so a verified OTP cannot authorize multiple uploads.
+      // Consume the OTP authorization after validating the upload.
       user.audioOTPVerifiedUntil = null;
       await user.save();
 
-      return res.status(200).send({
-        message: "Audio uploaded successfully",
-        audioUrl: `${req.protocol}://${req.get("host")}/uploads/audio/${req.file.filename}`,
+      const audioUrl =
+        `${req.protocol}://${req.get("host")}` +
+        `/uploads/audio/${req.file.filename}`;
+
+      return res.status(200).json({
+        message: "Audio uploaded successfully.",
+        audioUrl,
       });
     } catch (error) {
       console.error("Audio upload error:", error);
-      if (req.file) { try { fs.unlinkSync(req.file.path); } catch {} }
-      return res.status(500).send({ message: "Unable to upload audio." });
+
+      if (req.file) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (cleanupError) {
+          console.error("Audio cleanup error:", cleanupError);
+        }
+      }
+
+      return res.status(500).json({
+        message: "Unable to upload audio.",
+      });
     }
   }
 );
+
 
 // ==========================================
 // FORGOT PASSWORD

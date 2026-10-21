@@ -178,19 +178,18 @@ const TweetComposer = ({ onTweetPosted }: any) => {
       setAudioOTPVerified(true);
 
       // Upload audio
-      const formData = new FormData();
-      formData.append("audio", audioFile);
-      formData.append("email", user.email);
+      
+const formData = new FormData();
 
-      const uploadResponse = await axiosInstance.post(
-        "/upload-audio",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
+// Append the email BEFORE the file.
+formData.append("email", user.email);
+formData.append("audio", audioFile);
+
+const uploadResponse = await axiosInstance.post(
+  "/upload-audio",
+  formData
+);
+
 
       const uploadedAudioUrl = uploadResponse.data.audioUrl;
 
