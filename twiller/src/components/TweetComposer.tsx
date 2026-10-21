@@ -87,7 +87,6 @@ const TweetComposer = ({ onTweetPosted }: any) => {
     };
 
     audio.onerror = () => {
-      window.URL.revokeObjectURL(audio.src);
       setAudioMessage(
         "Unable to read the audio file."
       );
@@ -178,18 +177,18 @@ const TweetComposer = ({ onTweetPosted }: any) => {
       setAudioOTPVerified(true);
 
       // Upload audio
-      
-const formData = new FormData();
+      const formData = new FormData();
+      formData.append("audio", audioFile);
 
-// Append the email BEFORE the file.
-formData.append("email", user.email);
-formData.append("audio", audioFile);
-
-const uploadResponse = await axiosInstance.post(
-  "/upload-audio",
-  formData
-);
-
+      const uploadResponse = await axiosInstance.post(
+        "/upload-audio",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
 
       const uploadedAudioUrl = uploadResponse.data.audioUrl;
 

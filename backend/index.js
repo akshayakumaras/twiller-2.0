@@ -1,5 +1,4 @@
 import "dotenv/config";
-import fs from "fs";
 
 import express from "express";
 import cors from "cors";
@@ -536,34 +535,23 @@ app.get(
 );
 
 
-// Audio uploads are allowed from 2:00 PM until 7:00 PM IST (7 PM exclusive).
-const isWithinAudioUploadWindow = () => {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Kolkata",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date());
-  const hour = Number(parts.find((part) => part.type === "hour")?.value);
-  const minute = Number(parts.find((part) => part.type === "minute")?.value);
-  const minutes = hour * 60 + minute;
-  return minutes >= 14 * 60 && minutes < 19 * 60;
-};
-
 // ==========================================
 // MULTER AUDIO UPLOAD
 // ==========================================
 
-// Ensure the upload directory exists in the current deployment environment.
-// Note: Render's local filesystem is ephemeral unless a persistent disk is configured.
-const audioUploadDir = path.join(process.cwd(), "uploads", "audio");
-fs.mkdirSync(audioUploadDir, { recursive: true });
-
 const storage =
   multer.diskStorage({
 
-    destination: (req, file, cb) => {
-      cb(null, audioUploadDir);
+    destination: (
+      req,
+      file,
+      cb
+    ) => {
+
+      cb(
+        null,
+        "uploads/audio/"
+      );
     },
 
 
@@ -656,135 +644,42 @@ app.get("/", (req, res) => {
 // AUDIO UPLOAD
 // ==========================================
 
-
 app.post(
   "/upload-audio",
-  (req, res, next) => {
-    upload.single("audio")(req, res, (err) => {
-      if (err) {
-        console.error("Audio upload parsing error:", err);
-
-        return res.status(400).json({
-          message: err.message || "Unable to process audio upload.",
-        });
-      }
-
-      next();
-    });
-  },
+  upload.single("audio"),
   async (req, res) => {
+
     try {
-      // Read the registered email from multipart form data.
-      const email =
-        typeof req.body?.email === "string"
-          ? req.body.email.trim().toLowerCase()
-          : "";
-
-      console.log("Audio upload received:", {
-        contentType: req.headers["content-type"],
-        emailReceived: Boolean(email),
-        fileReceived: Boolean(req.file),
-        fileFieldName: req.file?.fieldname,
-        fileMimeType: req.file?.mimetype,
-        fileSize: req.file?.size,
-      });
-
-      if (!email) {
-        if (req.file) {
-          try {
-            fs.unlinkSync(req.file.path);
-          } catch (cleanupError) {
-            console.error("Audio cleanup error:", cleanupError);
-          }
-        }
-
-        return res.status(400).json({
-          message:
-            "Registered email is required for audio verification.",
-        });
-      }
-
-      const user = await User.findOne({ email });
-
-      if (!user) {
-        if (req.file) {
-          try {
-            fs.unlinkSync(req.file.path);
-          } catch (cleanupError) {
-            console.error("Audio cleanup error:", cleanupError);
-          }
-        }
-
-        return res.status(404).json({
-          message: "User not found.",
-        });
-      }
-
-      // Require successful OTP verification within the last five minutes.
-      if (
-        !user.audioOTPVerifiedUntil ||
-        new Date(user.audioOTPVerifiedUntil).getTime() <= Date.now()
-      ) {
-        if (req.file) {
-          try {
-            fs.unlinkSync(req.file.path);
-          } catch (cleanupError) {
-            console.error("Audio cleanup error:", cleanupError);
-          }
-        }
-
-        return res.status(403).json({
-          message: "Verify the audio OTP before uploading.",
-        });
-      }
-
-      // Enforce the 2 PM to 7 PM India Standard Time window.
-      if (!isWithinAudioUploadWindow()) {
-        if (req.file) {
-          try {
-            fs.unlinkSync(req.file.path);
-          } catch (cleanupError) {
-            console.error("Audio cleanup error:", cleanupError);
-          }
-        }
-
-        return res.status(403).json({
-          message:
-            "Audio tweets are allowed only between 2:00 PM and 7:00 PM IST.",
-        });
-      }
 
       if (!req.file) {
-        return res.status(400).json({
-          message: "Audio file is required.",
+
+        return res.status(400).send({
+          message:
+            "Audio file is required",
         });
       }
 
-      // Consume the OTP authorization after validating the upload.
-      user.audioOTPVerifiedUntil = null;
-      await user.save();
 
-      const audioUrl =
-        `${req.protocol}://${req.get("host")}` +
-        `/uploads/audio/${req.file.filename}`;
+      return res.status(200).send({
 
-      return res.status(200).json({
-        message: "Audio uploaded successfully.",
-        audioUrl,
+        message:
+          "Audio uploaded successfully",
+
+        audioUrl:
+          `${req.protocol}://${req.get("host")}/uploads/audio/${req.file.filename}`,
       });
+
     } catch (error) {
-      console.error("Audio upload error:", error);
 
-      if (req.file) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch (cleanupError) {
-          console.error("Audio cleanup error:", cleanupError);
-        }
-      }
+      console.error(
+        "Audio upload error:",
+        error
+      );
 
-      return res.status(500).json({
-        message: "Unable to upload audio.",
+
+      return res.status(500).send({
+        message:
+          error.message,
       });
     }
   }
@@ -1849,17 +1744,9 @@ app.post(
       }
 
 
-      const normalizedEmail = email.trim().toLowerCase();
-
-      if (!isWithinAudioUploadWindow()) {
-        return res.status(403).send({
-          message: "Audio OTPs are available only between 2:00 PM and 7:00 PM IST.",
-        });
-      }
-
       const user =
         await User.findOne({
-          email: normalizedEmail,
+          email,
         });
 
 
@@ -1882,7 +1769,6 @@ app.post(
 
       user.audioOTP =
         otp;
-      user.audioOTPVerifiedUntil = null;
 
 
       user.audioOTPExpiry =
@@ -1895,14 +1781,10 @@ app.post(
       await user.save();
 
 
-      try {
-        await sendOTP(normalizedEmail, otp);
-      } catch (emailError) {
-        user.audioOTP = "";
-        user.audioOTPExpiry = null;
-        await user.save();
-        throw emailError;
-      }
+      await sendOTP(
+        email,
+        otp
+      );
 
 
       return res
@@ -1955,10 +1837,9 @@ app.post(
       }
 
 
-      const normalizedEmail = email.trim().toLowerCase();
       const user =
         await User.findOne({
-          email: normalizedEmail,
+          email,
         });
 
 
@@ -1986,8 +1867,10 @@ app.post(
 
 
       user.audioOTP = "";
-      user.audioOTPExpiry = null;
-      user.audioOTPVerifiedUntil = new Date(Date.now() + 5 * 60 * 1000);
+
+      user.audioOTPExpiry =
+        null;
+
 
       await user.save();
 
