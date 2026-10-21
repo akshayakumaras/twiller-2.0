@@ -554,19 +554,16 @@ const isWithinAudioUploadWindow = () => {
 // MULTER AUDIO UPLOAD
 // ==========================================
 
+// Ensure the upload directory exists in the current deployment environment.
+// Note: Render's local filesystem is ephemeral unless a persistent disk is configured.
+const audioUploadDir = path.join(process.cwd(), "uploads", "audio");
+fs.mkdirSync(audioUploadDir, { recursive: true });
+
 const storage =
   multer.diskStorage({
 
-    destination: (
-      req,
-      file,
-      cb
-    ) => {
-
-      cb(
-        null,
-        "uploads/audio/"
-      );
+    destination: (req, file, cb) => {
+      cb(null, audioUploadDir);
     },
 
 
@@ -684,8 +681,11 @@ app.post(
           : "";
 
       console.log("Audio upload received:", {
+        contentType: req.headers["content-type"],
         emailReceived: Boolean(email),
         fileReceived: Boolean(req.file),
+        fileFieldName: req.file?.fieldname,
+        fileMimeType: req.file?.mimetype,
         fileSize: req.file?.size,
       });
 
