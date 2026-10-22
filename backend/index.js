@@ -91,11 +91,25 @@ const SUBSCRIPTION_PLANS = {
 
 // ==========================================
 // PAYMENT TIME
-// TEMPORARILY ENABLED FOR TESTING
 // ==========================================
 
+
 const isPaymentTimeAllowed = () => {
-  return true;
+  const parts = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+
+  const hour = Number(parts.find((part) => part.type === "hour").value);
+  const minute = Number(parts.find((part) => part.type === "minute").value);
+
+  const currentTime = hour * 60 + minute;
+  const startTime = 10 * 60;
+  const endTime = 11 * 60;
+
+  return currentTime >= startTime && currentTime < endTime;
 };
 
 
