@@ -171,7 +171,7 @@ Use test accounts and payment sandbox credentials when possible.
 
 ## 👨‍💻 Author
 
-**Akshaya Kumar**
+**Akshaya Kumar A.S**
 
 ## 📄 License
 
